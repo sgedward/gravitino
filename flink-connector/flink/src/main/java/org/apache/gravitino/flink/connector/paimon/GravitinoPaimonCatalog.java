@@ -19,7 +19,13 @@
 
 package org.apache.gravitino.flink.connector.paimon;
 
+import com.google.common.annotations.VisibleForTesting;
+import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.flink.table.catalog.AbstractCatalog;
 import org.apache.flink.table.catalog.ObjectPath;
 import org.apache.flink.table.catalog.exceptions.CatalogException;
@@ -27,9 +33,15 @@ import org.apache.flink.table.catalog.exceptions.TableNotExistException;
 import org.apache.flink.table.factories.CatalogFactory;
 import org.apache.flink.table.factories.Factory;
 import org.apache.gravitino.NameIdentifier;
+import org.apache.gravitino.catalog.lakehouse.paimon.PaimonConstants;
 import org.apache.gravitino.flink.connector.PartitionConverter;
 import org.apache.gravitino.flink.connector.SchemaAndTablePropertiesConverter;
 import org.apache.gravitino.flink.connector.catalog.BaseCatalog;
+import org.apache.gravitino.rel.expressions.Expression;
+import org.apache.gravitino.rel.expressions.NamedReference;
+import org.apache.gravitino.rel.expressions.distributions.Distribution;
+import org.apache.gravitino.rel.expressions.distributions.Distributions;
+import org.apache.gravitino.rel.expressions.distributions.Strategy;
 import org.apache.paimon.flink.FlinkCatalogFactory;
 import org.apache.paimon.flink.FlinkTableFactory;
 
@@ -76,5 +88,43 @@ public class GravitinoPaimonCatalog extends BaseCatalog {
   @Override
   public Optional<Factory> getFactory() {
     return Optional.of(new FlinkTableFactory());
+  }
+
+  @Override
+  protected Distribution toGravitinoDistribution(Map<String, String> properties) {
+    return getDistribution(properties);
+  }
+
+  @VisibleForTesting
+  static Distribution getDistribution(Map<String, String> properties) {
+    if (properties == null) {
+      return Distributions.NONE;
+    }
+    String bucketKeys = properties.get(PaimonConstants.BUCKET_KEY);
+    if (StringUtils.isBlank(bucketKeys)) {
+      return Distributions.NONE;
+    }
+    List<String> bucketKeyList =
+        Arrays.stream(bucketKeys.split(","))
+            .map(String::trim)
+            .filter(StringUtils::isNotBlank)
+            .collect(Collectors.toList());
+    if (bucketKeyList.isEmpty()) {
+      return Distributions.NONE;
+    }
+    Expression[] expressions =
+        bucketKeyList.stream().map(NamedReference::field).toArray(Expression[]::new);
+    String bucketValue = properties.get(PaimonConstants.BUCKET_NUM);
+    if (StringUtils.isBlank(bucketValue)) {
+      return Distributions.auto(Strategy.HASH, expressions);
+    }
+    String trimmedBucketValue = bucketValue.trim();
+    try {
+      return Distributions.hash(Integer.parseInt(trimmedBucketValue), expressions);
+    } catch (NumberFormatException e) {
+      throw new IllegalArgumentException(
+          String.format("Paimon bucket number must be a valid integer, but was '%s'.", bucketValue),
+          e);
+    }
   }
 }

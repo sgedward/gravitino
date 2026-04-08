@@ -23,6 +23,10 @@ import java.util.Map;
 import org.apache.flink.configuration.Configuration;
 import org.apache.gravitino.catalog.lakehouse.paimon.PaimonConstants;
 import org.apache.gravitino.flink.connector.CatalogPropertiesConverter;
+import org.apache.gravitino.rel.expressions.NamedReference;
+import org.apache.gravitino.rel.expressions.distributions.Distribution;
+import org.apache.gravitino.rel.expressions.distributions.Distributions;
+import org.apache.gravitino.rel.expressions.distributions.Strategy;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -97,5 +101,54 @@ public class TestPaimonPropertiesConverter {
     Assertions.assertEquals(testPassword, properties.get(PaimonConstants.GRAVITINO_JDBC_PASSWORD));
     Assertions.assertEquals(testUri, properties.get(PaimonConstants.URI));
     Assertions.assertEquals(testBackend, properties.get(PaimonConstants.CATALOG_BACKEND));
+  }
+
+  @Test
+  public void testGetDistributionWithNullProperties() {
+    Distribution distribution = GravitinoPaimonCatalog.getDistribution(null);
+    Assertions.assertEquals(Distributions.NONE, distribution);
+  }
+
+  @Test
+  public void testGetDistributionWithNoBucketKey() {
+    Map<String, String> options = ImmutableMap.of();
+    Distribution distribution = GravitinoPaimonCatalog.getDistribution(options);
+    Assertions.assertEquals(Distributions.NONE, distribution);
+  }
+
+  @Test
+  public void testGetDistributionWithAutoBucketNumber() {
+    Map<String, String> options = ImmutableMap.of(PaimonConstants.BUCKET_KEY, "col_1");
+    Distribution distribution = GravitinoPaimonCatalog.getDistribution(options);
+    Assertions.assertEquals(Strategy.HASH, distribution.strategy());
+    Assertions.assertEquals(Distributions.AUTO, distribution.number());
+    Assertions.assertEquals(
+        "col_1", ((NamedReference) distribution.expressions()[0]).fieldName()[0]);
+  }
+
+  @Test
+  public void testGetDistributionWithMultipleBucketKeys() {
+    Map<String, String> options =
+        ImmutableMap.of(PaimonConstants.BUCKET_KEY, "col_1,col_2", PaimonConstants.BUCKET_NUM, "4");
+    Distribution distribution = GravitinoPaimonCatalog.getDistribution(options);
+    Assertions.assertEquals(Strategy.HASH, distribution.strategy());
+    Assertions.assertEquals(4, distribution.number());
+    Assertions.assertEquals(2, distribution.expressions().length);
+    Assertions.assertEquals(
+        "col_1", ((NamedReference) distribution.expressions()[0]).fieldName()[0]);
+    Assertions.assertEquals(
+        "col_2", ((NamedReference) distribution.expressions()[1]).fieldName()[0]);
+  }
+
+  @Test
+  public void testGetDistributionWithInvalidBucketNumber() {
+    Map<String, String> options =
+        ImmutableMap.of(
+            PaimonConstants.BUCKET_KEY, "col_1", PaimonConstants.BUCKET_NUM, "not_a_number");
+    IllegalArgumentException exception =
+        Assertions.assertThrows(
+            IllegalArgumentException.class, () -> GravitinoPaimonCatalog.getDistribution(options));
+    Assertions.assertTrue(
+        exception.getMessage().contains("Paimon bucket number must be a valid integer"));
   }
 }

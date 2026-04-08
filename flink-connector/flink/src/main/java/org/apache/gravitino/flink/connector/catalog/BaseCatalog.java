@@ -78,6 +78,7 @@ import org.apache.gravitino.flink.connector.utils.TypeUtils;
 import org.apache.gravitino.rel.Column;
 import org.apache.gravitino.rel.Table;
 import org.apache.gravitino.rel.TableChange;
+import org.apache.gravitino.rel.expressions.distributions.Distribution;
 import org.apache.gravitino.rel.expressions.distributions.Distributions;
 import org.apache.gravitino.rel.expressions.sorts.SortOrder;
 import org.apache.gravitino.rel.expressions.transforms.Transform;
@@ -289,8 +290,9 @@ public abstract class BaseCatalog extends AbstractCatalog {
             .map(this::toGravitinoColumn)
             .toArray(Column[]::new);
     String comment = table.getComment();
+    Map<String, String> flinkOptions = table.getOptions();
     Map<String, String> properties =
-        schemaAndTablePropertiesConverter.toGravitinoTableProperties(table.getOptions());
+        schemaAndTablePropertiesConverter.toGravitinoTableProperties(flinkOptions);
     Transform[] partitions =
         partitionConverter.toGravitinoPartitions(((CatalogTable) table).getPartitionKeys());
     Index[] indices = getGrivatinoIndices(resolvedTable);
@@ -304,7 +306,7 @@ public abstract class BaseCatalog extends AbstractCatalog {
               comment,
               properties,
               partitions,
-              Distributions.NONE,
+              toGravitinoDistribution(flinkOptions),
               new SortOrder[0],
               indices);
     } catch (NoSuchSchemaException e) {
@@ -733,5 +735,9 @@ public abstract class BaseCatalog extends AbstractCatalog {
 
   protected String catalogName() {
     return getName();
+  }
+
+  protected Distribution toGravitinoDistribution(Map<String, String> properties) {
+    return Distributions.NONE;
   }
 }
