@@ -19,6 +19,7 @@
 package org.apache.gravitino.flink.connector.paimon;
 
 import com.google.common.collect.ImmutableMap;
+import java.util.HashMap;
 import java.util.Map;
 import org.apache.flink.configuration.Configuration;
 import org.apache.gravitino.catalog.lakehouse.paimon.PaimonConstants;
@@ -101,6 +102,38 @@ public class TestPaimonPropertiesConverter {
     Assertions.assertEquals(testPassword, properties.get(PaimonConstants.GRAVITINO_JDBC_PASSWORD));
     Assertions.assertEquals(testUri, properties.get(PaimonConstants.URI));
     Assertions.assertEquals(testBackend, properties.get(PaimonConstants.CATALOG_BACKEND));
+  }
+
+  @Test
+  public void testToGravitinoTablePropertiesStripesBucketProperties() {
+    Map<String, String> flinkProperties = new HashMap<>();
+    flinkProperties.put(PaimonConstants.BUCKET_KEY, "id");
+    flinkProperties.put(PaimonConstants.BUCKET_NUM, "4");
+    flinkProperties.put("some-other-key", "some-value");
+
+    Map<String, String> result = CONVERTER.toGravitinoTableProperties(flinkProperties);
+
+    Assertions.assertFalse(result.containsKey(PaimonConstants.BUCKET_KEY));
+    Assertions.assertFalse(result.containsKey(PaimonConstants.BUCKET_NUM));
+    Assertions.assertEquals("some-value", result.get("some-other-key"));
+  }
+
+  @Test
+  public void testToGravitinoTablePropertiesWithoutBucketProperties() {
+    Map<String, String> flinkProperties = ImmutableMap.of("some-key", "some-value");
+
+    Map<String, String> result = CONVERTER.toGravitinoTableProperties(flinkProperties);
+
+    Assertions.assertFalse(result.containsKey(PaimonConstants.BUCKET_KEY));
+    Assertions.assertFalse(result.containsKey(PaimonConstants.BUCKET_NUM));
+    Assertions.assertEquals("some-value", result.get("some-key"));
+  }
+
+  @Test
+  public void testGetDistributionWithBlankBucketKey() {
+    Map<String, String> options = ImmutableMap.of(PaimonConstants.BUCKET_KEY, "  ");
+    Distribution distribution = GravitinoPaimonCatalog.getDistribution(options);
+    Assertions.assertEquals(Distributions.NONE, distribution);
   }
 
   @Test
